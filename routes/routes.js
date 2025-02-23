@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const router = express.Router();
 
-const DATA_FILE = path.join(__dirname, '..', 'routes.json');
+const DATA_FILE = path.join(process.cwd(), 'routes.json');
 
 // Fonction pour charger les itinéraires depuis le fichier JSON
 function loadRoutes() {
