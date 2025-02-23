@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="fr" data-bs-theme="light">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoMaster - Plateforme de Géolocalisation Intelligente</title>
+    
+    <!-- Styles externes -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.0/dist/minty/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
+    
+    <!-- Styles personnalisés -->
+    <style>
+      :root {
+        --primary: #2563eb;
+        --secondary: #1d4ed8;
+        --accent: #22c55e;
+        --light: #f8fafc;
+        --dark: #0f172a;
+      }
+      
+      body {
+        background: #f8fafc;
+        min-height: 100vh;
+      }
+      
+      /* Navbar responsive */
+      .navbar {
+        box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
+        background: linear-gradient(135deg, var(--primary), var(--secondary));
+      }
+      
+      .map-container {
+        border-radius: 1rem;
+        overflow: hidden;
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+        height: 75vh;
+        position: relative;
+      }
+      
+      /* Réduction de la hauteur de la carte sur mobile */
+      @media (max-width: 576px) {
+        .map-container {
+          height: 50vh;
+        }
+      }
+      
+      .dashboard-card {
+        background: white;
+        border: none;
+        border-radius: 0.75rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      }
+      
+      .control-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+      
+      .stat-card {
+        background: white;
+        border-left: 4px solid var(--primary);
+        transition: transform 0.2s;
+        padding: 1.25rem;
+        border-radius: 0.5rem;
+      }
+      
+      .stat-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      }
+      
+      .traffic-indicator {
+        height: 8px;
+        border-radius: 4px;
+        background: #e2e8f0;
+        overflow: hidden;
+      }
+      
+      .traffic-progress {
+        height: 100%;
+        transition: width 0.5s ease;
+      }
+      
+      .custom-marker {
+        background: var(--accent);
+        border: 2px solid white;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        color: white;
+        box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
+      }
+
+      /* Possibilité de réduire la fenêtre d'instructions */
+      .leaflet-routing-container.collapsed {
+        max-height: 40px;
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+      }
+      
+      /* Bouton de réduction/agrandissement transparent positionné en haut à droite */
+      .toggle-instructions-btn {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        z-index: 4000;
+        cursor: pointer;
+        border: none;
+        background: transparent;
+        border-radius: 50%;
+        width: 28px;
+        height: 28px;
+      }
+      
+      /* Box de trafic avec scrollbar */
+      .traffic-stats-scroll {
+        max-height: 250px;
+        overflow-y: auto;
+      }
+
+      /* Suggestions de recherche en premier plan */
+      #autocompleteResults {
+        z-index: 3000;
+      }
+    </style>
+  </head>
+  <body class="d-flex flex-column">
+    <!-- Navbar responsive avec toggler -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+      <div class="container">
+        <a class="navbar-brand d-flex align-items-center" href="/">
+          <i class="bi bi-geo-alt-fill me-2 fs-4"></i>
+          <span class="fw-semibold">GeoMaster</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" 
+                aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse justify-content-end" id="navbarSupportedContent">
+          <div class="d-flex gap-3">
+            <button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#saveModal">
+              <i class="bi bi-cloud-upload me-2"></i>Sauvegarder
+            </button>
+            <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#loadModal">
+              <i class="bi bi-folder2-open me-2"></i>Charger
+            </button>
+          </div>
+        </div>
+      </div>
+    </nav>
+    
+    <!-- Contenu principal -->
+    <main class="container flex-grow-1 my-4">
+      <div class="row g-4">
+        <!-- Carte principale -->
+        <div class="col-12 col-lg-8">
+          <div class="map-container">
+            <div id="map" class="h-100"></div>
+          </div>
+        </div>
+        <!-- Panneau de contrôle -->
+        <div class="col-12 col-lg-4">
+          <div class="control-panel h-100">
+            <div class="card dashboard-card">
+              <div class="card-header bg-transparent border-bottom d-flex justify-content-between align-items-center py-3">
+                <h5 class="mb-0 fw-semibold">
+                  <i class="bi bi-pin-map me-2"></i>Points d'intérêt
+                </h5>
+                <button id="toggleDrawing" class="btn btn-sm btn-primary">
+                  <i class="bi bi-pencil"></i>
+                </button>
+              </div>
+              <div class="card-body">
+                <!-- Saisie de coordonnées GPS -->
+                <div class="mb-4">
+                  <label class="form-label small fw-bold text-muted">Coordonnées GPS</label>
+                  <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-geo-alt"></i></span>
+                    <input type="text" id="coordInput" class="form-control form-control-sm" placeholder="Latitude, Longitude">
+                    <button id="coordBtn" class="btn btn-primary btn-sm">
+                      <i class="bi bi-search"></i>
+                    </button>
+                  </div>
+                </div>
+                <!-- Localisation actuelle -->
+                <div class="d-grid gap-2 mb-4">
+                  <button id="markLocation" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-crosshair me-2"></i>Localiser ma position
+                  </button>
+                </div>
+                <!-- Recherche d'adresse -->
+                <div class="mb-4">
+                  <label class="form-label small fw-bold text-muted">Recherche d'adresse</label>
+                  <form id="searchForm" class="position-relative">
+                    <div class="input-group">
+                      <input type="text" id="addressInput" class="form-control form-control-sm" placeholder="Saisir une adresse...">
+                      <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="bi bi-search"></i>
+                      </button>
+                    </div>
+                    <div id="autocompleteResults" class="list-group position-absolute w-100 mt-1"></div>
+                  </form>
+                </div>
+                <!-- Nouveau bouton : Afficher les coordonnées du point sélectionné -->
+                <div class="d-grid gap-2 mb-4">
+                  <button id="showCoordBtn" class="btn btn-info btn-sm">
+                    <i class="bi bi-pin-map"></i> Afficher Coordonnées
+                  </button>
+                </div>
+                <!-- Boutons actions -->
+                <div class="d-grid gap-2">
+                  <button id="traceRoute" class="btn btn-success btn-sm">
+                    <i class="bi bi-signpost-split me-2"></i>Calculer itinéraire
+                  </button>
+                  <button id="clearAll" class="btn btn-danger btn-sm">
+                    <i class="bi bi-trash3 me-2"></i>Réinitialiser
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Dashboard de statistiques -->
+      <div class="row mt-4 g-4">
+        <div class="col-12">
+          <div class="card dashboard-card">
+            <div class="card-body">
+              <div class="row g-4">
+                <!-- Bloc Distance / Durée -->
+                <div class="col-md-4">
+                  <div class="stat-card">
+                    <!-- Distance totale -->
+                    <h6 class="text-muted small mb-2">
+                      <i class="bi bi-arrow-repeat me-2"></i>Distance totale
+                    </h6>
+                    <div class="h4 fw-bold text-primary mb-2" id="totalDistance">0 km</div>
+                    
+                    <!-- Durée totale -->
+                    <h6 class="text-muted small mb-2">
+                      <i class="bi bi-clock-history me-2"></i>Durée totale
+                    </h6>
+                    <div class="h4 fw-bold text-primary" id="totalDuration">0 min</div>
+                  </div>
+                </div>
+
+                <!-- Détail des segments -->
+                <div class="col-md-4">
+                  <div class="stat-card">
+                    <h6 class="text-muted small mb-3">
+                      <i class="bi bi-bar-chart-steps me-2"></i>Détail des segments
+                    </h6>
+                    <div id="segmentDistances" class="d-flex flex-column gap-2"></div>
+                  </div>
+                </div>
+
+                <!-- Statistiques de trafic (avec scroller) -->
+                <div class="col-md-4">
+                  <div class="stat-card">
+                    <h6 class="text-muted small mb-3">
+                      <i class="bi bi-speedometer2 me-2"></i>Statistiques de trafic
+                    </h6>
+                    <div id="trafficStatsBox" class="d-grid gap-2 traffic-stats-scroll"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    
+    <!-- Modal Sauvegarder -->
+    <div class="modal fade" id="saveModal" tabindex="-1" aria-labelledby="saveModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="saveModalLabel">
+              <i class="bi bi-save me-2"></i>Sauvegarder l'itinéraire
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+          </div>
+          <form id="saveForm">
+            <div class="modal-body">
+              <div class="mb-3">
+                <label for="routeName" class="form-label">Nom de l'itinéraire</label>
+                <input type="text" class="form-control" id="routeName" required>
+              </div>
+              <div class="alert alert-info small mb-0">
+                <i class="bi bi-info-circle me-2"></i>
+                Points actuellement sauvegardés : <strong id="numPoints">0</strong>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Annuler</button>
+              <button type="submit" class="btn btn-primary btn-sm">Confirmer</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Modal Charger -->
+    <div class="modal fade" id="loadModal" tabindex="-1" aria-labelledby="loadModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="loadModalLabel">
+              <i class="bi bi-folder2-open me-2"></i>Itinéraires sauvegardés
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+          </div>
+          <div class="modal-body">
+            <div id="savedRoutesList" class="list-group">
+              <!-- Les itinéraires seront chargés ici dynamiquement -->
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fermer</button>
+            <button type="button" id="refreshSaved" class="btn btn-primary btn-sm">Rafraîchir</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <script>window.mapConfig = <%- JSON.stringify(mapConfig) %>;</script>
+    <script src="/js/app.js"></script>
+  </body>
+</html>
